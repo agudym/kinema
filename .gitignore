@@ -1,0 +1,5 @@
+.venv
+kinema.egg-info
+__pycache__
+kinematics_hexapod.blend
+kinematics_panda.blend
