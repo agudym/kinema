@@ -6,7 +6,7 @@ from enum import Enum
 import numpy as np
 import matplotlib.pyplot as plt
 
-from roboticstoolbox import ET, ETS
+from kinema.elementary_transforms import ET, ETS, SE3
 
 from kinema import LinkDrawing2D
 from kinema.link_kinematic import generate_multicycles_robot
@@ -65,16 +65,16 @@ if __name__ == "__main__" :
             _ = links[-1].add_constraint(T, (1,1,0,0,0,0))
 
         if constraint_type == ExampleConstraints.Parallel_move:
-            constraint_track = links[link_id_tracking].add_constraint(np.identity(4), (1,1,0,0,0,1))
+            constraint_track = links[link_id_tracking].add_constraint(SE3(), (1,1,0,0,0,1))
         else:
-            constraint_track = links[link_id_tracking].add_constraint(np.identity(4), (1,1,0,0,0,0))
+            constraint_track = links[link_id_tracking].add_constraint(SE3(), (1,1,0,0,0,0))
 
         def robot_control(x: float, y: float, random_init=False):
             global q_render
 
-            T_goal = np.identity(4)
+            T_goal = np.eye(4)
             T_goal[:2, 3] = (x,y)
-            constraint_track.update_target_pose(T_goal)
+            constraint_track.update_target_pose(SE3(T_goal))
             
             if random_init:
                 q0 = np.random.uniform(-np.pi, np.pi, links[-1].num_joints)

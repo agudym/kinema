@@ -8,8 +8,7 @@ import bpy
 import numpy as np
 
 import mathutils
-from spatialmath import SE3
-from roboticstoolbox import ET
+from .elementary_transforms import ET, SE3
 
 from kinema import LinkKinematic
 
@@ -72,10 +71,10 @@ def create_hexapod(mesh_root: str) :
             ets_parent_to_world = links_out[i].get_orientation()
             if i == 0:
                 # Use first chain for reference orientation(Z-height)
-                ets_platform_to_world = ET.tz(ets_parent_to_world[2,3])
+                ets_platform_to_world = ET.tz(ets_parent_to_world.mat[2,3])
             
             ets_platform_to_chains.append(
-                ET.SE3(np.linalg.inv(ets_parent_to_world)) * ets_platform_to_world)
+                ets_parent_to_world.inv() * ets_platform_to_world)
 
         link_platform = LinkBlenderDrawing3D(platform_path, link_parents=links_out,
                                             ets_l2ps=ets_platform_to_chains)
@@ -128,7 +127,7 @@ class LinkBlenderDrawing3D(LinkKinematic):
         self.correct_initial_configuration()
         self._update_transform(self.collect_q0())
 
-    def update_transform(self, link_name:str, T_goal: np.ndarray, keyframe_animation=False, frame=None):
+    def update_transform(self, link_name:str, T_goal: SE3, keyframe_animation=False, frame=None):
         q0 = None
         for link in self._list_all_links():
             if link.blender_mesh is None or link.blender_mesh.name != link_name:
@@ -227,6 +226,8 @@ class BlenderObject():
             return M
         elif isinstance(M, np.ndarray):
             return mathutils.Matrix(M)
+        elif isinstance(M, SE3):
+            return mathutils.Matrix(M.mat)
         else:
             raise ValueError(f"Can not convert object of type {type(M)} into mathutils.Matrix")
         

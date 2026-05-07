@@ -3,9 +3,10 @@
 
 from typing import Optional, Union, List, Dict
 
+import copy
 import numpy as np
 
-from roboticstoolbox import ET, ETS
+from kinema.elementary_transforms import ET, ETS, SE3
 
 import networkx as nx
 
@@ -56,9 +57,9 @@ class LinkConnected:
         elif isinstance(ets_l2ps, list):
             self._ets_l2ps: List[ETS] = []
             for ets in ets_l2ps:
-                 self._ets_l2ps.append(ETS(ets))
+                 self._ets_l2ps.append(copy.deepcopy(ETS(ets)))
         else:
-            self._ets_l2ps: List[ETS] = [ETS(ets_l2ps), ]
+            self._ets_l2ps: List[ETS] = [copy.deepcopy(ETS(ets_l2ps)), ]
 
         if link_parents is None:
             self._link_parents: List["LinkConnected"] = []
@@ -113,20 +114,8 @@ class LinkConnected:
     def name(self) -> str:
         """ Unique name of the link in the sequence """
         return f"link{self._link_id}" if self._name is None else self._name
-
-    @staticmethod
-    def get_joint_indices(ets: ETS) -> List[int]:
-        """
-        Indices(positions) of the according ET(from ETS) in global configuration vector
-        """
-        joint_indices: List[int] = []
-        for et in ets:
-            if not et.isjoint:
-                continue
-            joint_indices.append(et.jindex)
-        return joint_indices
     
-    def get_orientation(self, q: Optional[np.ndarray]=None) -> np.ndarray:
+    def get_orientation(self, q: Optional[np.ndarray]=None) -> SE3:
         """
         Calculate link to base 6DoF orientation, using initial configuration.
         Parameters
@@ -181,10 +170,8 @@ class LinkConnected:
         for link in self._list_all_links():
             for q0_l2p, ets_l2p in zip(link._q0_l2ps, link._ets_l2ps):
                 j = 0
-                for et in ets_l2p:
-                    if not et.isjoint:
-                        continue
-                    q0[et.jindex] = q0_l2p[j]
+                for et in ets_l2p.joints():
+                    q0[et.qindex] = q0_l2p[j]
                     j += 1
         if check_init and np.sum(np.isnan(q0)) > 0:
             raise RuntimeError("Uninitialized configuration parameters detected.")
@@ -201,10 +188,8 @@ class LinkConnected:
         for link in self._list_all_links():
             for i, ets_l2p in enumerate(link._ets_l2ps):
                 j = 0
-                for et in ets_l2p:
-                    if not et.isjoint:
-                        continue
-                    link._q0_l2ps[i][j] = q0_new[et.jindex]
+                for et in ets_l2p.joints():
+                    link._q0_l2ps[i][j] = q0_new[et.qindex]
                     j += 1
 
     def _list_all_links(self):
@@ -216,7 +201,7 @@ class LinkConnected:
         for i in range(len(path) - 1):
             graph_edge = self._graph.edges[path[i], path[i+1]]
             ets = ets * graph_edge['ets']
-        return ets.compile()
+        return ets
 
     def _generate_unique_ids(self) -> None:
         if self._is_base_link:
@@ -233,10 +218,8 @@ class LinkConnected:
         # assign unique kinematic parameter (or joint) ID
         # interesting feature https://github.com/petercorke/robotics-toolbox-python/issues/393
         for ets_l2p in self._ets_l2ps:
-            for et in ets_l2p:
-                if not et.isjoint:
-                    continue
-                et.jindex = self._root._num_joints
+            for et in ets_l2p.joints():
+                et.qindex = self._root._num_joints
                 self._root._num_joints += 1
 
     def _process_connection_graph(self):
@@ -263,6 +246,7 @@ class LinkConnected:
         if num_parents <= 1:
             return
             
+        q0 = None
         if not self._use_flexible_cycles:
             q0 = self.collect_q0(check_init=False) # not all q0 are set, because graph is not updated yet
         
@@ -270,80 +254,9 @@ class LinkConnected:
             for j in range(i + 1, num_parents):
                 ets_path = self._get_ets_between(self._link_parents[i], self._link_parents[j])
                 if not self._use_flexible_cycles:
-                    ets_path = ETS(ET.SE3(ets_path.eval(q0)))
-                ets_cycle = (ets_path * self._ets_l2ps[j] * self._ets_l2ps[i].inv()).compile()
+                    ets_path = ETS([ets_path.eval(q0)])
+                ets_cycle = ets_path * self._ets_l2ps[j] * self._ets_l2ps[i].inv()
                 self._ets_cycles.append(ets_cycle)
 
     def __str__(self):
         return self.name
-
-def main():
-    def check_ets_cycle(ets: ETS, q0: np.ndarray, max_err: float = 1e-10):
-        ets_loop_delta = np.max(np.abs(ets.eval(q0) - np.identity(4)))
-        if ets_loop_delta > max_err:
-            raise RuntimeError(f"|(A*B*C)^-1 * (A*B*C) - I| = {ets_loop_delta} is too big!")
-        else:
-            print(f"ETS loop error is OK: {ets_loop_delta}")
-
-    class TLinkConnected(LinkConnected):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self._process_new_cycles()
-
-        def _process_new_cycles(self):
-            q0 = self.collect_q0()
-            for ets_cycle in self._ets_cycles:
-                check_ets_cycle(ets_cycle, q0)
-
-    # Basic ETS checks
-    ets_base_to_world = ET.Rx(np.pi/4) * ET.tx()
-    base = TLinkConnected(ets_base_to_world)
-    ets_child_to_base = ET.Rz(np.pi/2) * ET.ty()
-    child = TLinkConnected(ets_child_to_base, base)
-    print(f"Elementary transform chain between World and base-link: {base.get_ets_to_base()}")
-    print(f"Elementary transform chain between World and end-link: {child.get_ets_to_base()}")
-    print(f"Elementary transform chain between base and end links: {child.get_ets_to_base(base)}")
-
-    ets_child_to_world = ets_base_to_world * ets_child_to_base
-    jindex_counter = 0
-    for et in ets_child_to_world:
-        if et.isjoint:
-            et.jindex = jindex_counter
-            jindex_counter += 1
-
-    q_test = np.array((1,1))#some random values
-    check_ets_cycle(ets_child_to_world.inv() * child.get_ets_to_base(), q_test)
-
-    # Test Cycles
-    # Non-parametric
-    def test_link_cycles_static(flip: bool, use_flexible_cycles: bool = False):
-        dT = ET.Rz(-2 * np.pi/3) * ET.tx(1)
-        link0 = TLinkConnected(dT)
-        link1 = TLinkConnected(dT, link0)
-        if flip:
-            link2 = TLinkConnected([dT, dT.inv()], [link1, link0], use_flexible_cycles=use_flexible_cycles)
-        else:
-            link2 = TLinkConnected([dT.inv(), dT], [link0, link1], use_flexible_cycles=use_flexible_cycles)
-    test_link_cycles_static(True)
-    test_link_cycles_static(False)
-    test_link_cycles_static(True, True)
-
-    # Parametric
-    dT = ET.Rz() * ET.tx()
-    d_q = [-2 * np.pi/3, 1]
-    d_q_r = [1, -2 * np.pi/3]
-    link0 = TLinkConnected(dT, None, [d_q,])
-    link1 = TLinkConnected(dT, link0, [d_q,])
-    link2 = TLinkConnected([dT, dT.inv()], [link1, link0], [d_q, d_q_r]) # note reversed order of parameters (due to inv())
-
-    q0 = np.array(d_q + d_q+ d_q + d_q_r )
-    if not np.all(link0.collect_q0() == q0 ):
-        raise RuntimeError(f"Configuration vectors {q0} and {link0.q0} don't match!")
-    link0.reset_q0(q0)
-    if not np.all(link0.collect_q0() == q0 ):
-        raise RuntimeError(f"Configuration vectors {q0} and {link0.q0} don't match!")
-
-    print("Test passed!")
-
-if __name__ == "__main__":
-    main()

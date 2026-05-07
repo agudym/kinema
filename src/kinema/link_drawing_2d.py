@@ -4,13 +4,12 @@
 from typing import Optional, Union, List, Dict, Tuple
 import numpy as np
 
-import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.patches import Circle
 from matplotlib.lines import Line2D
 
-from roboticstoolbox import ET, ETS
+from kinema.elementary_transforms import ET, ETS
 
 from kinema.link_kinematic import LinkKinematic, generate_multicycles_robot
 
@@ -127,7 +126,7 @@ class LinkDrawing2D(LinkKinematic):
     def _render_link2d( self, q: Optional[np.ndarray], ax: Axes) -> None:
         if q is None:
             q = self.collect_q0()
-        T_l2w = self._ets_l2w.eval(q)
+        T_l2w = self._ets_l2w.eval(q).numpy()
         pts2d_w = T_l2w @ self._pts_bound
 
         # Render link
@@ -135,7 +134,7 @@ class LinkDrawing2D(LinkKinematic):
 
         # Render joint(s)
         for ets_j2w, et_type in self._ets_j2w_with_type:
-            T_j2w = ets_j2w.eval(q)
+            T_j2w = ets_j2w.eval(q).numpy()
             joint_origin = T_j2w[:2,3]
             if et_type == 3:
                 self._draw_mpl_circle(joint_origin, ax)
@@ -212,22 +211,25 @@ class LinkDrawing2D(LinkKinematic):
                 ets_p2w = ET.tx(0)
             else:
                 ets_p2w = self._link_parents[i].get_ets_to_base()
-            ets_j2p = []
-            for et in ets_l2p:
-                if et.isjoint:
-                    if et.isrotation:
-                        et_type = 3
-                    elif et.axis == "tx":
-                        et_type = 0
-                    elif et.axis == "ty":
-                        et_type = 1
-                    elif et.axis == "tz":
-                        et_type = 2
-                    else:
-                        raise RuntimeError("Unknown axis")
-                    ets_j2w = (ets_p2w * ETS(ets_j2p)).compile()
-                    self._ets_j2w_with_type.append((ets_j2w, et_type))
-                ets_j2p.append(et)
+            
+            for et in ets_l2p.joints():
+                if et.is_rotation:
+                    et_type = 3
+                elif et.axis == "x":
+                    et_type = 0
+                elif et.axis == "y":
+                    et_type = 1
+                elif et.axis == "z":
+                    et_type = 2
+                else:
+                    raise RuntimeError("Unknown axis")
+                
+                # prefix up to the joint
+                idx = ets_l2p.ets.index(et)
+                ets_j2p = ets_l2p.ets[:idx]
+                
+                ets_j2w = ets_p2w * ETS(ets_j2p)
+                self._ets_j2w_with_type.append((ets_j2w, et_type))
 
     def _clear(self) -> None:
         for artist in self._mpl_artists:
@@ -351,23 +353,3 @@ def draw_multicycles_robot():
     links = generate_multicycles_robot(LinkDrawing2D, (pt_start, pt_end, link_width), link_length, debug=True)
     links[-1].render(xlim=(-5,10), ylim=(-5,30))
     return links
-
-def main():
-    # Test visualization
-    links = LinkDrawing2D.generate_sequential_robot(1, 5, ET.Rz() * ET.tx(), [[np.pi/4, 7.5],])
-    links[-1].render()
-
-    hex1_links = LinkDrawing2D.make_hexagon_robot()
-    hex1_links[-1].render()
-
-    hex2_links = LinkDrawing2D.make_hexagon_robot("P")
-    hex2_links[-1].render(xlim=(-20,10), ylim=(-25,5))
-    
-    _ = draw_multicycles_robot()
-
-    plt.show()
-
-    print("Test passed!")
-
-if __name__ == "__main__":
-    main()

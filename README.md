@@ -10,8 +10,9 @@
 ## Intro
 
 1. **Pythonic way of robot modelling** - define complex open and closed kinematic chains with a few lines of code
-2. Inverse kinematics with constraints will be solved using automated **cycles search**
-3. **Visualize the mechanisms** in 2D (matplotlib) or 3D ([Blender3D](https://www.blender.org/))
+2. **Powered by JAX auto-differentiation** with JIT-compiled functions to reach realtime speed!
+3. Inverse kinematics with constraints will be solved using automated **cycles search**
+4. **Visualize the mechanisms** in 2D (matplotlib) or 3D ([Blender3D](https://www.blender.org/))
 
 ## Examples
 
@@ -112,7 +113,7 @@ def create_hexapod(mesh_root: str) :
                 ets_platform_to_world = ET.tz(ets_parent_to_world[2,3])
             
             ets_platform_to_chains.append(
-                ET.SE3(np.linalg.inv(ets_parent_to_world)) * ets_platform_to_world)
+                ets_parent_to_world.inv() * ets_platform_to_world)
 
         link_platform = LinkBlenderDrawing3D(platform_path, link_parents=links_out,
                                             ets_l2ps=ets_platform_to_chains)

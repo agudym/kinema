@@ -8,7 +8,7 @@ import time
 import numpy as np
 import scipy
 
-from roboticstoolbox import ET, ETS, angle_axis_python
+from kinema.elementary_transforms import ET, ETS, SE3
 
 from kinema.link_connected import LinkConnected
 
@@ -76,15 +76,18 @@ class IKConstraint:
     def __init__( self,
                 ets: ETS,
                 num_joints: int,
-                T_goal: np.ndarray = np.identity(4),
+                T_goal: Optional[SE3] = None,
                 weights: Optional[list[float]] = None):
         self._ets = ets
-        self._active_joint_ids: List[int] = LinkConnected.get_joint_indices(self._ets)
 
         self.num_joints = num_joints
         self._J = np.zeros((LinkConnected.num_task_dims, num_joints))
 
-        self._T_goal_mat = T_goal
+        if T_goal is None:
+            self._T_goal_mat = SE3()
+        else:
+            self._T_goal_mat = T_goal
+
         if weights is None:
             self._W = np.eye(LinkConnected.num_task_dims)
         else:
@@ -92,17 +95,20 @@ class IKConstraint:
                 raise ValueError(f"Invalid weights number {len(weights)} != {LinkConnected.num_task_dims}")
             self._W = np.diag(weights)
 
-    def update_target_pose(self, T_goal: np.ndarray):
+    def update_target_pose(self, T_goal: SE3):
         """
         Update SE3 transformation before the solve
         """
+        if not isinstance(T_goal, SE3):
+            raise ValueError("Invalid type!")
+
         self._T_goal_mat = T_goal
 
     def calc_residuals(self, q: np.ndarray) :
-        return self._W @ angle_axis_python(self._T_goal_mat, self._ets.eval(q))
+        return self._W @ self._T_goal_mat.calc_delta(self._ets.eval(q))
     
     def calc_jacobian(self, q: np.ndarray) :
-        self._J[:, self._active_joint_ids] = self._ets.jacob0(q)
+        self._J = self._ets.jacob0(q)
         return self._W @ self._J
     
 class LinkKinematic(LinkConnected):
@@ -169,7 +175,7 @@ class LinkKinematic(LinkConnected):
                     print("Kinematic cycles not found.")
 
     def add_constraint( self,
-                  T_goal: np.ndarray,
+                  T_goal: SE3,
                   weights: Optional[list[float]] = None,
                   link_base: Union["LinkConnected", None] = None,
                   reset: bool = False) -> IKConstraint :
@@ -192,6 +198,9 @@ class LinkKinematic(LinkConnected):
         -------
         A newly created `IKConstraint`
         """
+        if not isinstance(T_goal, SE3):
+            raise ValueError("Invalid type!")
+        
         if reset:
             self._constraints_user.clear()
 
@@ -199,7 +208,7 @@ class LinkKinematic(LinkConnected):
             IKConstraint(self.get_ets_to_base(link_base), self.num_joints, T_goal, weights))
         return self._constraints_user[-1]
 
-    def solve(self, q0: Optional[np.ndarray] = None, iterations_max: int=20):
+    def solve(self, q0: Optional[np.ndarray] = None, iterations_max: int=25):
         """
         Find new configuration for all connected links, each link can have specific constraints.
 
@@ -266,12 +275,3 @@ def generate_multicycles_robot( LinkClass,
         link0 = link3
     links[-1].correct_initial_configuration()
     return links
-
-def main():
-    _ = generate_multicycles_robot(LinkKinematic, debug=True, num_cycles=10)
-
-    # OK, the error is smaller the tol, test's passed
-    print("Test passed!")
-
-if __name__ == "__main__":
-    main()

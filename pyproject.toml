@@ -15,14 +15,23 @@ readme = "README.md"
 requires-python = "~=3.11"
 
 dependencies = [
-    # Limits of the robotic toolbox
-    "numpy<2.0.0",
-    "roboticstoolbox-python",
+    "numpy",
+    "bpy==4.5",
+    "jax",
+    "jaxlib",
     "networkx",
     "matplotlib",
     "scipy",
-    "bpy==4.5"
+    "tqdm"
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest"
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-p no:faulthandler"
