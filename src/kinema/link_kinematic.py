@@ -8,6 +8,8 @@ import time
 import numpy as np
 import scipy
 
+import jax.numpy as jnp
+
 from kinema.elementary_transforms import ET, ETS, SE3
 
 from kinema.link_connected import LinkConnected
@@ -81,7 +83,7 @@ class IKConstraint:
         self._ets = ets
 
         self.num_joints = num_joints
-        self._J = np.zeros((LinkConnected.num_task_dims, num_joints))
+        self._J = jnp.zeros((LinkConnected.num_task_dims, num_joints))
 
         if T_goal is None:
             self._T_goal_mat = SE3()
@@ -89,11 +91,11 @@ class IKConstraint:
             self._T_goal_mat = T_goal
 
         if weights is None:
-            self._W = np.eye(LinkConnected.num_task_dims)
+            self._W = jnp.eye(LinkConnected.num_task_dims)
         else:
             if len(weights) != LinkConnected.num_task_dims:
                 raise ValueError(f"Invalid weights number {len(weights)} != {LinkConnected.num_task_dims}")
-            self._W = np.diag(weights)
+            self._W = jnp.diag(jnp.array(weights))
 
     def update_target_pose(self, T_goal: SE3):
         """
@@ -105,10 +107,10 @@ class IKConstraint:
         self._T_goal_mat = T_goal
 
     def calc_residuals(self, q: np.ndarray) :
-        return self._W @ self._T_goal_mat.calc_delta(self._ets.eval(q))
+        return self._W @ self._ets.delta_se3(q, self._T_goal_mat)
     
     def calc_jacobian(self, q: np.ndarray) :
-        self._J = self._ets.jacob0(q)
+        self._J = self._ets.jacob(q)
         return self._W @ self._J
     
 class LinkKinematic(LinkConnected):

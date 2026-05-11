@@ -19,12 +19,6 @@ class SE3:
             mat = jnp.asarray(mat, dtype=jnp.float64)
         self.mat = mat
 
-    def calc_delta(self, other: 'SE3'):
-        d_trans = other.mat[:3, -1] - self.mat[:3, -1]
-        R = other.mat[:3, :3] @ self.mat[:3, :3].T
-        d_angle = log_SO3(R)
-        return jnp.concatenate((d_trans, d_angle))
-
     def inv(self):
         R_T = self.mat[:3, :3].T
         inv_mat = jnp.eye(4, dtype=jnp.float64)
@@ -67,7 +61,7 @@ class ET :
         return ET(-self.id, self.qindex)
 
     def eval(self, v):
-        return ET._eval_jax(self.id, v, jnp.eye(4, dtype=jnp.float64))
+        return ET._eval_jax(v, self.id, jnp.eye(4, dtype=jnp.float64), jnp.eye(4, dtype=jnp.float64))
 
     @staticmethod
     def tx(q: float | None = None):
@@ -102,7 +96,7 @@ class ET :
 
     @staticmethod
     @jax.jit
-    def _eval_jax(id, v, mat):
+    def _eval_jax(v, id, mat_left, mat_right):
         v = v * jnp.sign(id)
         abs_id = jnp.abs(id)
         c, s = jnp.cos(v), jnp.sin(v)
@@ -114,12 +108,14 @@ class ET :
         m_ry = jnp.array([[c, 0., s, 0.], [0., 1., 0., 0.], [-s, 0., c, 0.], [0., 0., 0., 1.]], dtype=jnp.float64)
         m_rz = jnp.array([[c, -s, 0., 0.], [s, c, 0., 0.], [0., 0., 1., 0.], [0., 0., 0., 1.]], dtype=jnp.float64)
         
-        return jnp.where(abs_id == 1, m_tx,
+        m_et = jnp.where(abs_id == 1, m_tx,
                  jnp.where(abs_id == 2, m_ty,
                    jnp.where(abs_id == 3, m_tz,
                      jnp.where(abs_id == 4, m_rx,
                        jnp.where(abs_id == 5, m_ry, 
-                         jnp.where(abs_id == 6, m_rz, mat))))))
+                         jnp.where(abs_id == 6, m_rz, jnp.eye(4, dtype=jnp.float64)))))))
+                         
+        return mat_left @ m_et @ mat_right
 
 class ETS :
     def __init__(self, ets_list=None):
@@ -133,9 +129,7 @@ class ETS :
             self.ets = list(ets_list)
 
         # When ETS is evaluated we cache the metadata
-        self._mats, self._ids, self._ets2qindex = None, None, None
-        
-        self._idxlist = np.arange(len(self.ets))
+        self._mats_left, self._mats_right, self._ids, self._ets2qindex = None, None, None, None
 
     @property
     def n(self):
@@ -168,23 +162,40 @@ class ETS :
     def eval(self, q):
         if not self._has_cache():
            self._cache()
-        
-        # ets can heave identical ETs with 1 parameter or static where first q is used as a stub
-        if len(q) > 0:
-            q_unpack = q[self._ets2qindex]
-        else:
-            q_unpack = jnp.zeros(len(self.ets))
 
         return SE3(
             ETS._eval(
-                q_unpack, self._ids, self._mats
+                self._unpack(q), self._ids, self._mats_left, self._mats_right
             )
         )
+    
+    def delta_se3(self, q, pose_dst: SE3) :
+        """ Evaluate source pose SE3(q), compute delta to destination SE3 pose """
+        if not self._has_cache():
+           self._cache()
+        
+        return ETS._delta_se3(
+            pose_dst.mat, self._unpack(q), self._ids, self._mats_left, self._mats_right
+        )
+
+    def jacob(self, q):
+        if not self._has_cache():
+            self._cache()
+        
+        jac_unpacked = ETS._jacob(
+            self._unpack(q), self._ids, self._mats_left, self._mats_right
+        )
+        
+        jac = jnp.zeros((6, len(q)), dtype=jnp.float64)
+        if len(q) > 0:
+            jac = jac.at[:, self._ets2qindex].add(jac_unpacked)
+
+        return jac
 
     @staticmethod
     @jax.jit
-    def _eval(q_var, ids_arr, mats_arr):
-        mapped_mats = jax.vmap(ET._eval_jax)(ids_arr, q_var, mats_arr)
+    def _eval(*args):
+        mapped_mats = jax.vmap(ET._eval_jax)(*args)
         def scan_fn(carry, x):
             return carry @ x, None
         return jax.lax.scan(scan_fn, jnp.eye(4, dtype=jnp.float64), mapped_mats)[0]
@@ -192,60 +203,73 @@ class ETS :
     @staticmethod
     @jax.jit
     @jax.jacrev
-    def _jacob(q_var, ids_arr, mats_arr):
-        mat = ETS._eval(q_var, ids_arr, mats_arr)
+    def _jacob(*args):
+        mat = ETS._eval(*args)
         t = mat[:3, 3]       # translation
         R = mat[:3, :3]      # rotation
         r = log_SO3(R)       # axis-angle vector
         return jnp.concatenate([t, r])
-
-    def jacob0(self, q):
-        if not self._has_cache():
-            self._cache()
+    
+    @staticmethod
+    @jax.jit
+    def _delta_se3(mat_dst: jnp.ndarray, *args) :
+        mat_src = ETS._eval(*args)
+        d_trans = mat_src[:3, -1] - mat_dst[:3, -1]
+        R = mat_src[:3, :3] @ mat_dst[:3, :3].T
+        d_angle = log_SO3(R)
+        return jnp.concatenate((d_trans, d_angle))
+    
+    def _has_cache(self) :
+        return self._mats_left is not None and self._ids is not None and self._ets2qindex is not None
+    
+    def _cache(self) :
+        """ Compacting sequence of transformations, preparing metadata for fast jit-operations """
+        ids = []
+        mats_left = []
+        mats_right = []
+        self._ets2qindex = []
+        q_idx = 0
         
+        cur_left = np.eye(4, dtype=np.float64)
+        
+        nodes = []
+        for et in self.ets:
+            if isinstance(et, SE3): # Static transformation
+                if len(nodes) == 0:
+                    cur_left = cur_left @ et.mat
+                else:
+                    nodes[-1][3] = nodes[-1][3] @ et.mat
+            else: # Parametrized transformation
+                q_val = et.qindex if et.qindex >= 0 else q_idx
+                q_idx += 1
+                nodes.append([et.id, q_val, cur_left, np.eye(4, dtype=np.float64)])
+                cur_left = np.eye(4, dtype=np.float64)
+
+        if len(nodes) == 0:
+            nodes.append([0, 0, cur_left, np.eye(4, dtype=np.float64)])
+            
+        for n in nodes:
+            ids.append(n[0])
+            self._ets2qindex.append(n[1])
+            mats_left.append(n[2])
+            mats_right.append(n[3])
+            
+        self._ets2qindex = np.array(self._ets2qindex, dtype=np.int32)
+        self._mats_left = jnp.array(mats_left, dtype=jnp.float64)
+        self._mats_right = jnp.array(mats_right, dtype=jnp.float64)
+        self._ids = jnp.array(ids, dtype=jnp.int32)
+    
+    def _unpack(self, q) :
+        """
+        Input q is a unique (compact) vector of parameters to ET, while
+        list[ET] can heave non unique (repeating) et, we should get 1-1 vector
+        of ET's parameters
+        """
         if len(q) > 0:
             q_unpack = q[self._ets2qindex]
         else:
-            q_unpack = jnp.zeros(len(self.ets))
-
-        jac_unpacked = np.array(
-            ETS._jacob(
-                q_unpack, self._ids, self._mats
-            )
-        )
-        
-        jac = np.zeros((6, len(q)))
-        if len(q) > 0:
-            mask = self._ets2qindex >= 0
-            jac[:, self._ets2qindex[mask]] = jac_unpacked[:, self._idxlist[mask]]
-
-        return jac
-    
-    def _has_cache(self) :
-        return self._mats is not None and self._ids is not None and self._ets2qindex is not None
-    
-    def _cache(self) :
-        ids = []
-        mats = []
-        self._ets2qindex = []
-        q_idx = 0
-        for et in self.ets:
-            if isinstance(et, SE3):
-                ids.append(0)
-                mats.append(et.mat)
-                self._ets2qindex.append(-1)
-            else:
-                ids.append(et.id)
-                mats.append(jnp.eye(4, dtype=jnp.float64))
-                
-                if et.qindex >= 0:
-                    self._ets2qindex.append(et.qindex)
-                else:
-                    self._ets2qindex.append(q_idx)
-                q_idx += 1
-        self._ets2qindex = np.array(self._ets2qindex, dtype=np.int32)
-        self._mats = jnp.array(mats, dtype=jnp.float64)
-        self._ids = jnp.array(ids, dtype=jnp.int32)
+            q_unpack = jnp.zeros(len(self._ets2qindex))
+        return q_unpack
 
 def log_SO3(R, epsilon: float = 1e-12):
     """

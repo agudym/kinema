@@ -6,7 +6,7 @@ from kinema.link_connected import LinkConnected
 def check_ets_cycle(ets: ETS, q0: np.ndarray, max_err: float = 1e-10):
     ets_loop_delta = np.max(
         np.abs(
-            ets.eval(q0).calc_delta(SE3())
+            ets.delta_se3(q0, SE3())
         )
     )
     if ets_loop_delta > max_err:
