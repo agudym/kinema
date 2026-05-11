@@ -136,7 +136,7 @@ python -m venv .venv
 # Install the package in editable mode
 pip install -e .
 
-# [OPTIONAL] IF you wish to try GPU-based computing, update JAX, with e.g.
+# [OPTIONAL] IF you wish to try GPU-based computing (Windows is not supported yet), update JAX accordingly, e.g.
 pip install -U "jax[cuda13]"
 ```
 

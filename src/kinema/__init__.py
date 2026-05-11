@@ -1,3 +1,8 @@
+import jax
+devices = jax.devices()
+print(f"JAX Devices available: {devices}")
+print(f"JAX Default Device: {devices[0]}")
+
 from .link_kinematic import LinkKinematic
 from .link_connected import LinkConnected
 from .link_drawing_2d import LinkDrawing2D
