@@ -1,4 +1,5 @@
 # Inspired by roboticstoolbox https://github.com/petercorke/robotics-toolbox-python
+# https://github.com/jhavl/dkt/blob/main/Part%201/2%20The%20Manipulator%20Jacobian.ipynb
 
 # Robot Kinematics Playground (Python Library)
 # Author: anton.gudym@gmail.com (Anton Gudym)
@@ -195,29 +196,37 @@ class ETS :
     @staticmethod
     @jax.jit
     def _eval(*args):
-        mapped_mats = jax.vmap(ET._eval_jax)(*args)
-        def scan_fn(carry, x):
-            return carry @ x, None
-        return jax.lax.scan(scan_fn, jnp.eye(4, dtype=jnp.float64), mapped_mats)[0]
+        transform_chain = jax.vmap(ET._eval_jax)(*args)
+        transform_accum = jnp.eye(4, dtype=jnp.float64)
+        for i in range(len(transform_chain)):
+            transform_accum = transform_accum @ transform_chain[i]
+            
+        return transform_accum
     
     @staticmethod
     @jax.jit
-    @jax.jacrev
     def _jacob(*args):
         mat = ETS._eval(*args)
-        t = mat[:3, 3]       # translation
-        R = mat[:3, :3]      # rotation
-        r = log_SO3(R)       # axis-angle vector
-        return jnp.concatenate([t, r])
-    
+        # dmat_dq shape: (3, 4, len(q))
+        dmat_dq = jax.jacrev(lambda *a: ETS._eval(*a)[:3])(*args)
+        skew_mat = jnp.einsum('ijo,jk->iko', dmat_dq[:3, :3, :], mat[:3, :3].T)
+
+        omega = jnp.stack([
+            skew_mat[2, 1, :],
+            skew_mat[0, 2, :],
+            skew_mat[1, 0, :]
+        ], axis=0)
+
+        return jnp.concatenate([dmat_dq[:3, 3, :], omega], axis=0)
+
     @staticmethod
     @jax.jit
     def _delta_se3(mat_dst: jnp.ndarray, *args) :
         mat_src = ETS._eval(*args)
         d_trans = mat_src[:3, -1] - mat_dst[:3, -1]
-        R = mat_src[:3, :3] @ mat_dst[:3, :3].T
-        d_angle = log_SO3(R)
-        return jnp.concatenate((d_trans, d_angle))
+        d_R = mat_src[:3, :3] @ mat_dst[:3, :3].T
+        d_rotvec = log_SO3(d_R)
+        return jnp.concatenate((d_trans, d_rotvec))
     
     def _has_cache(self) :
         return self._mats_left is not None and self._ids is not None and self._ets2qindex is not None
