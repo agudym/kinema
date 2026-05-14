@@ -142,7 +142,7 @@ pip install -U "jax[cuda13]"
 
 ## Future Plans
 
-1. Add parameter limits to the Lev-Marq optimization constraints
+- Add parameter limits to the Lev-Marq optimization constraints (e.g. Panda example above has collision ;) )
 
 ## License
 

@@ -206,22 +206,44 @@ class ETS :
     @staticmethod
     @jax.jit
     def _jacob(*args):
+        # When we compute d / dt R(q(t)), the angular velocity tensor [omega(q)]_x appears:
+        #
+        # dR(q)/dt = [omega(q)]_x @ R(q)
+        # (from d / dt R @ R.T = 0)
+        #
+        # Applying the chain rule: [omega]_x = (dR/dq * dq/dt) @ R^T.
+        # We extract the Spatial Jacobian (J_s) via un-skewing the tensor (dR/dqi @ R^T) for each joint i.
+        # J_s maps joint velocities to spatial rotational velocities (omega = J_s(q) * dq/dt).
+
         mat = ETS._eval(*args)
         # dmat_dq shape: (3, 4, len(q))
         dmat_dq = jax.jacrev(lambda *a: ETS._eval(*a)[:3])(*args)
         skew_mat = jnp.einsum('ijo,jk->iko', dmat_dq[:3, :3, :], mat[:3, :3].T)
 
-        omega = jnp.stack([
+        jac_spatial = jnp.stack([
             skew_mat[2, 1, :],
             skew_mat[0, 2, :],
             skew_mat[1, 0, :]
         ], axis=0)
 
-        return jnp.concatenate([dmat_dq[:3, 3, :], omega], axis=0)
+        return jnp.concatenate([dmat_dq[:3, 3, :], jac_spatial], axis=0)
 
     @staticmethod
     @jax.jit
     def _delta_se3(mat_dst: jnp.ndarray, *args) :
+        # Compute the Cartesian error delta between source and destination SE3 poses:
+        # e(q) = log_SO3(R_src(q) @ R_dst^T) be the axis-angle error delta.
+        #
+        # For Inverse Kinematics, by Lie group theory (using taylor series derivatives),
+        # the exact derivative of this error vector is:
+        #   d(e)/dq = J_l^{-1}(e) @ J_s(q)
+        # where J_l^{-1} is the Inverse Left Jacobian of SO(3) and J_s is the Spatial Jacobian.
+        #
+        # For IK Solvers, when optimizing problem min e(q) -> q, using approximation
+        # d(e)/dq ~= J_s(q),
+        # works well as the rotation error approaches zero (e -> 0), J_l^{-1}(e) -> Identity matrix,
+        # such that optimization goes without differentiating log_SO3.
+
         mat_src = ETS._eval(*args)
         d_trans = mat_src[:3, -1] - mat_dst[:3, -1]
         d_R = mat_src[:3, :3] @ mat_dst[:3, :3].T
