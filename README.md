@@ -120,7 +120,7 @@ def create_hexapod(mesh_root: str) :
     return link_platform
 ```
 
-## Install
+## Install and Running
 
 Python 3.11 is required (due to the [Blender3D](https://www.blender.org/) `bpy` package dependency).
 
@@ -140,6 +140,10 @@ pip install -e .
 # [OPTIONAL] IF you wish to try GPU-based computing (Windows is not supported yet), update JAX accordingly, e.g.
 pip install -U "jax[cuda13]"
 ```
+
+After that **run**:
+- `playground/run_matplot_drawing_2d.py` for drawing 2D interactive examples.
+- `playground/run_blender_drawing_3d.py` for animated 3D scene generation ([Blender3D](https://www.blender.org/) is required), check newly created `.blend` files...
 
 ## Future Plans
 
