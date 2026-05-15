@@ -11,11 +11,12 @@ authors = [
 description = "Robot Kinematics Playground"
 readme = "README.md"
 
-# To work with Blender 4 scene generation and roboticstoolbox
+# To work with Blender (BPY)
 requires-python = "~=3.11"
 
 dependencies = [
-    "numpy",
+    # To work with Blender (BPY)
+    "numpy<2",
     "bpy==4.5",
     "jax",
     "jaxlib",

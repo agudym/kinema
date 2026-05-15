@@ -11,7 +11,7 @@
 ## Intro
 
 1. **Pythonic way of robot modelling** to define complex open and closed kinematic chains with a few lines of code
-2. **Powered by JAX auto-differentiation** to compute Kinematics Jacobian with GPU and apply JIT-compilation to reach realtime speed!
+2. **Powered by JAX auto-differentiation** to compute Kinematics Jacobian with JIT-compiled methods for realtime speed!
 3. **Automated closed-loop kinematic constraining** with `networkx` graph tracing
 4. **Visualize the mechanisms** build in 2D (matplotlib) or 3D ([Blender3D](https://www.blender.org/))
 
