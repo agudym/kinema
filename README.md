@@ -12,7 +12,7 @@
 
 1. **Pythonic way of robot modelling** to define complex open and closed kinematic chains with a few lines of code
 2. **Powered by JAX auto-differentiation** to compute Kinematics Jacobian with GPU and apply JIT-compilation to reach realtime speed!
-3. **Automated closed kinematics-constraining** with `networkx` graph tracing
+3. **Automated closed-loop kinematic constraining** with `networkx` graph tracing
 4. **Visualize the mechanisms** build in 2D (matplotlib) or 3D ([Blender3D](https://www.blender.org/))
 
 ## Examples
@@ -28,8 +28,8 @@ links = LinkDrawing2D.generate_sequential_robot(
     num_links=10, link_length=tx, ets=ETS(ET.Rz() * ET.tx() * ET.tx(tx)), link_width=0.25)
 ```
 
-### Closed kinematics in 2D
-Creating interconnected mechanism with closed kinematics :
+### Closed Kinematic Chains in 2D
+Creating interconnected mechanism with closed kinematic chains :
 ```python
 import numpy as np
 from kinema.link_kinematic import generate_multicycles_robot
@@ -45,7 +45,7 @@ links = generate_multicycles_robot(
 )
 ```
 
-### Closed kinematics in 3D - Stacking Hexapods or Stewart Platforms
+### Closed Kinematic Chains in 3D - Stacking Hexapods or Stewart Platforms
 Creating full 3D linkages like a Hexapod (combining 6 prismatic leg chains to a dual platform) in less then 100 lines of code (meshes are required for visualization in [Blender3D](https://www.blender.org/)):
 ```python
 def create_hexapod(mesh_root: str) :
