@@ -108,6 +108,28 @@ def create_panda(mesh_root:str) :
     panda_links[-1].init_transform()
     return panda_links[-1]
 
+def create_robopro_rc10(mesh_root:str) :
+    # Parallax Robopro RC10 kinematics
+    robot_meshes = [
+        ("base.obj", None ),
+        ("link_1.obj", ET.Rz()),
+        ("link_2.obj", ET.ty(-0.1740) * ET.tz(0.1685) * ET.Ry()),
+        ("link_3.obj", ET.ty(0.1485) * ET.tz(0.6100) * ET.Ry()),
+        ("link_4.obj", ET.ty(-0.1398) * ET.tz(0.5502) * ET.Ry()),
+        ("link_5.obj", ET.tz(0.1398) * ET.Rz()),
+        ("link_6.obj", ET.ty(-0.0868) * ET.Ry()),
+    ]
+
+    links = []
+    for i, (mesh_path, ets_link2parent) in enumerate(robot_meshes):
+        links.append(
+            LinkBlenderDrawing3D(
+                os.path.join(mesh_root, mesh_path),
+                link_parents=links[-1] if i > 0 else None,
+                ets_l2ps=ets_link2parent))
+    links[-1].init_transform()
+    return links[-1]
+
 class LinkBlenderDrawing3D(LinkKinematic):
     def __init__(self,
                 mesh_filepath: Optional[str]=None,
@@ -182,9 +204,9 @@ class BlenderObject():
                                         find_chains = True, 
                                         fix_orientation = True)
         elif self.ext.lower() == ".obj":
-            bpy.ops.import_mesh.obj(filepath=mesh_filepath)
+            bpy.ops.wm.obj_import(filepath=mesh_filepath)
         elif self.ext.lower() == ".stl":
-            bpy.ops.import_mesh.stl(filepath=mesh_filepath)
+            bpy.ops.wm.stl_import(filepath=mesh_filepath)
 
         # Group all nodes 
         if len(bpy.context.selected_objects) > 0:

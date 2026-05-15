@@ -10,13 +10,13 @@ import numpy as np
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation as R
 
-from kinema import create_hexapod, create_panda
+from kinema import create_hexapod, create_panda, create_robopro_rc10
 from kinema.elementary_transforms import SE3
 
 if __name__ == "__main__":
     root_path = os.path.split(__file__)[0]
 
-    for model, create_robot in zip(("panda", "hexapod"), (create_panda, create_hexapod)):
+    for model, create_robot in zip(("robopro_rc10", "panda", "hexapod"), (create_robopro_rc10, create_panda, create_hexapod)):
         # Clean the BPY scene
         bpy.ops.object.select_all(action='SELECT')
         bpy.ops.object.delete(use_global=False)
@@ -48,6 +48,21 @@ if __name__ == "__main__":
             for frame, translation in tqdm(zip(frames, translations), total=len(frames), desc=f"Generating {model} animations"):
                 T_goal = T_initial.copy()
                 T_goal[2, 3] += translation
+                
+                link_last.update_transform(target_object.name, SE3(T_goal), keyframe_animation=True, frame=frame)
+                
+        elif model == "robopro_rc10":
+            # Trajectory for animation: move down by 1 meter and rotate around global Z by 180 deg
+            translations = np.linspace(0, -1.0, 20)
+            angles = np.linspace(0, np.pi, 20)
+            frames = range(1, 21)
+            
+            for frame, (translation, angle) in tqdm(zip(frames, zip(translations, angles)), total=len(frames), desc=f"Generating {model} animations"):
+                T_goal = T_initial.copy()
+                T_goal[2, 3] += translation  # Move down by 1 meter in Z
+                # Rotate around global Z axis
+                R_z = R.from_euler('z', angle).as_matrix()
+                T_goal[:3, :3] = R_z @ T_initial[:3, :3]
                 
                 link_last.update_transform(target_object.name, SE3(T_goal), keyframe_animation=True, frame=frame)
 

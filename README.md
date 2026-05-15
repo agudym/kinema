@@ -5,6 +5,7 @@
   <img src="assets/2_cycles.gif" height="150" />
   <img src="assets/3_hexapod.gif" height="150" />
   <img src="assets/4_panda.gif" height="150" />
+  <img src="assets/5_robopro_rc10.gif" height="150" />
 </p>
 
 ## Intro
